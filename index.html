@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EDGE</title>
+    <meta
+      name="description"
+      content="EDGE is a modern study tracker with timer, streaks, goals, dedications, and analytics."
+    />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo" aria-hidden="true">ED</div>
+          <div class="brandText">
+            <div class="brandName">EDGE</div>
+            <div class="brandSub">Timer | Goals | Dedications | Analytics</div>
+          </div>
+        </div>
+
+        <div class="topbarActions">
+          <button class="chipBtn" id="openAnalyticsBtn" type="button">
+            <span class="chipIcon" aria-hidden="true">AN</span>
+            <span>Analytics</span>
+          </button>
+          <button class="chipBtn" id="darkModeToggle" type="button" aria-pressed="false">
+            <span class="chipIcon" aria-hidden="true">DM</span>
+            <span>Dark mode</span>
+          </button>
+          <button class="chipBtn danger" id="resetAllBtn" type="button">
+            <span class="chipIcon" aria-hidden="true">RS</span>
+            <span>Reset all data</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="heroPanel" aria-labelledby="heroTitle">
+        <div class="heroCopy">
+          <div class="heroEyebrow">EDGE focus dashboard</div>
+          <h1 class="heroTitle" id="heroTitle">Turn study time into visible care.</h1>
+          <p class="heroText">
+            Track focus sessions, grow your weekly goal, and dedicate earned water to plants, birds, or
+            animals each time you finish a meaningful session.
+          </p>
+        </div>
+        <div class="heroMetrics" aria-label="Quick overview">
+          <div class="heroMetric">
+            <div class="heroMetricLabel">This week</div>
+            <div class="heroMetricValue" id="heroWeekValue">0h</div>
+            <div class="heroMetricSub" id="heroWeekSub">0% of goal</div>
+          </div>
+          <div class="heroMetric">
+            <div class="heroMetricLabel">Best day</div>
+            <div class="heroMetricValue" id="heroBestDayValue">-</div>
+            <div class="heroMetricSub" id="heroBestDaySub">No sessions yet</div>
+          </div>
+          <div class="heroMetric">
+            <div class="heroMetricLabel">Focus score</div>
+            <div class="heroMetricValue" id="heroFocusScore">0</div>
+            <div class="heroMetricSub" id="heroFocusSub">Start with one session</div>
+          </div>
+        </div>
+      </section>
+
+      <main class="grid">
+        <section class="card span2 timerCard" aria-labelledby="timerTitle">
+          <div class="cardHeader">
+            <h2 class="cardTitle" id="timerTitle">Study Timer</h2>
+            <div class="cardHint" id="timerHint">Pomodoro or custom timer. Sessions save on completion.</div>
+          </div>
+
+          <div class="timerWrap timerWrapEnhanced">
+            <div class="timerHero">
+              <div class="timerDisplay" id="timerDisplay" role="timer" aria-live="polite">00:25:00</div>
+              <div class="timerSubline">
+                <span class="timerPulseDot" aria-hidden="true"></span>
+                <span id="timerProgressText">Ready to start</span>
+              </div>
+
+              <div class="timerMiniStats">
+                <div class="miniStatCard">
+                  <span class="miniStatLabel">Mode</span>
+                  <strong class="miniStatValue" id="timerModeLabel">Pomodoro focus</strong>
+                </div>
+                <div class="miniStatCard">
+                  <span class="miniStatLabel">Session target</span>
+                  <strong class="miniStatValue" id="timerTargetLabel">25 min</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="glassWrap" aria-hidden="true">
+              <div class="glassScene">
+                <div class="glassShelf" id="glassShelf"></div>
+                <div class="droplets" id="droplets"></div>
+              </div>
+              <div class="glassLegend" id="glassLegend">
+                One glass fills every 10 minutes. New glasses follow the visible-light spectrum.
+              </div>
+            </div>
+
+            <div class="timerControls">
+              <button class="btn primary" id="startBtn" type="button">Start</button>
+              <button class="btn" id="pauseBtn" type="button" disabled>Pause</button>
+              <button class="btn subtle" id="resetBtn" type="button">Reset</button>
+            </div>
+
+            <div class="focusModeControls" aria-label="Focus mode controls">
+              <button class="btn" id="focusPauseBtn" type="button" disabled>Pause</button>
+              <button class="btn subtle" id="focusSoundBtn" type="button" aria-pressed="true">Sound on</button>
+              <button class="btn subtle" id="focusExitBtn" type="button">Exit focus mode</button>
+            </div>
+
+            <div class="timerSettings">
+              <div class="segmented" role="tablist" aria-label="Timer mode">
+                <button class="segBtn active" id="modePomodoroBtn" type="button" role="tab" aria-selected="true">
+                  Pomodoro
+                </button>
+                <button class="segBtn" id="modeCustomBtn" type="button" role="tab" aria-selected="false">
+                  Custom
+                </button>
+              </div>
+
+              <div class="modePane" id="pomodoroPane">
+                <div class="formRow">
+                  <label class="label">Phase</label>
+                  <div class="pill" id="pomoPhasePill">Focus (25:00)</div>
+                </div>
+                <div class="formRow">
+                  <label class="label">Auto-switch</label>
+                  <label class="switch">
+                    <input id="pomoAutoSwitch" type="checkbox" checked />
+                    <span class="slider" aria-hidden="true"></span>
+                  </label>
+                </div>
+                <div class="miniNote">Focus sessions are stored. Breaks are not stored.</div>
+              </div>
+
+              <div class="modePane hidden" id="customPane">
+                <div class="formGrid">
+                  <div class="field">
+                    <label class="label" for="customHours">Hours</label>
+                    <input id="customHours" class="input" type="number" min="0" max="23" value="0" />
+                  </div>
+                  <div class="field">
+                    <label class="label" for="customMinutes">Minutes</label>
+                    <input id="customMinutes" class="input" type="number" min="0" max="59" value="25" />
+                  </div>
+                  <div class="field">
+                    <label class="label" for="customSeconds">Seconds</label>
+                    <input id="customSeconds" class="input" type="number" min="0" max="59" value="0" />
+                  </div>
+                  <div class="field">
+                    <label class="label" for="customStoreMode">Store as</label>
+                    <select id="customStoreMode" class="input">
+                      <option value="study" selected>Study session</option>
+                      <option value="break">Break (do not count)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="presetWrap" aria-label="Quick presets">
+                  <button class="presetBtn" data-minutes="15" type="button">15 min</button>
+                  <button class="presetBtn" data-minutes="25" type="button">25 min</button>
+                  <button class="presetBtn" data-minutes="45" type="button">45 min</button>
+                  <button class="presetBtn" data-minutes="60" type="button">60 min</button>
+                  <button class="presetBtn" data-minutes="90" type="button">90 min</button>
+                </div>
+
+                <div class="miniNote">Custom sessions marked as "Study session" are stored and counted.</div>
+              </div>
+
+              <div class="formRow">
+                <label class="label">Timer sounds</label>
+                <label class="switch">
+                  <input id="soundToggle" type="checkbox" checked />
+                  <span class="slider" aria-hidden="true"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="statsTitle">
+          <div class="cardHeader">
+            <h2 class="cardTitle" id="statsTitle">Stats</h2>
+            <div class="cardHint">Totals and streaks from saved sessions.</div>
+          </div>
+
+          <div class="statsGrid">
+            <div class="stat">
+              <div class="statLabel">Total study time</div>
+              <div class="statValue" id="totalTimeValue">0h 0m</div>
+              <div class="statSub" id="totalTimeSub">0 sessions</div>
+            </div>
+            <div class="stat">
+              <div class="statLabel">Today</div>
+              <div class="statValue" id="todayValue">0m</div>
+              <div class="statSub" id="todaySub">Keep it going</div>
+            </div>
+            <div class="stat">
+              <div class="statLabel">Current streak</div>
+              <div class="statValue" id="streakValue">0</div>
+              <div class="statSub">days</div>
+            </div>
+            <div class="stat">
+              <div class="statLabel">Best streak</div>
+              <div class="statValue" id="bestStreakValue">0</div>
+              <div class="statSub">days</div>
+            </div>
+            <div class="stat">
+              <div class="statLabel">Average session</div>
+              <div class="statValue" id="averageSessionValue">0m</div>
+              <div class="statSub" id="averageSessionSub">Build consistency</div>
+            </div>
+            <div class="stat">
+              <div class="statLabel">Plants</div>
+              <div class="statValue" id="plantsValue">0</div>
+              <div class="statSub" id="plantsSub">1 plant needs 30 minutes</div>
+            </div>
+            <div class="stat">
+              <div class="statLabel">Birds</div>
+              <div class="statValue" id="birdsValue">0</div>
+              <div class="statSub" id="birdsSub">1 bird needs 10 minutes</div>
+            </div>
+            <div class="stat">
+              <div class="statLabel">Elephants</div>
+              <div class="statValue" id="elephantValue">0</div>
+              <div class="statSub" id="elephantSub">1 elephant needs 50 minutes</div>
+            </div>
+            <div class="stat">
+              <div class="statLabel">Cows</div>
+              <div class="statValue" id="cowValue">0</div>
+              <div class="statSub" id="cowSub">1 cow needs 35 minutes</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="goalsTitle">
+          <div class="cardHeader">
+            <h2 class="cardTitle" id="goalsTitle">Goals and Insights</h2>
+            <div class="cardHint">A weekly goal keeps the dashboard actionable.</div>
+          </div>
+
+          <div class="goalBox">
+            <div class="goalTop">
+              <div>
+                <div class="goalLabel">Weekly goal</div>
+                <div class="goalValue"><span id="weeklyGoalValue">15</span> hours</div>
+              </div>
+              <label class="goalInputWrap">
+                <span class="label" for="weeklyGoalInput">Edit goal</span>
+                <input id="weeklyGoalInput" class="input goalInput" type="number" min="1" max="80" value="15" />
+              </label>
+            </div>
+            <div class="progressTrack progressTrackTall" aria-hidden="true">
+              <div class="progressFill" id="weeklyGoalFill" style="width: 0%"></div>
+            </div>
+            <div class="goalMeta" id="weeklyGoalMeta">0h of 15h this week</div>
+          </div>
+
+          <div class="insightsList">
+            <div class="insightCard">
+              <div class="insightLabel">Best day</div>
+              <div class="insightValue" id="bestDayValue">-</div>
+              <div class="insightSub" id="bestDaySub">No study days yet</div>
+            </div>
+            <div class="insightCard">
+              <div class="insightLabel">Most used mode</div>
+              <div class="insightValue" id="topModeValue">-</div>
+              <div class="insightSub" id="topModeSub">Use the timer to learn your rhythm</div>
+            </div>
+            <div class="insightCard insightCardWide">
+              <div class="insightLabel">Coach note</div>
+              <div class="insightCopy" id="focusTipText">
+                Start with one solid session today. Momentum matters more than perfect duration.
+              </div>
+            </div>
+            <div class="insightCard insightCardWide">
+              <div class="insightLabel">Last dedication</div>
+              <div class="insightCopy" id="lastDedicationText">
+                Finish an eligible study session to dedicate water to a plant, bird, elephant, or cow.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="milestonesTitle">
+          <div class="cardHeader">
+            <h2 class="cardTitle" id="milestonesTitle">Milestones</h2>
+            <div class="cardHint" id="milestoneHint">Progress toward your next goal.</div>
+          </div>
+
+          <div class="milestoneBox">
+            <div class="milestoneTop">
+              <div class="milestoneLabel" id="milestoneLabel">Next: 10 hours</div>
+              <div class="milestonePct" id="milestonePct">0%</div>
+            </div>
+            <div class="progressTrack" aria-hidden="true">
+              <div class="progressFill" id="milestoneFill" style="width: 0%"></div>
+            </div>
+            <div class="milestoneMeta" id="milestoneMeta">0h of 10h</div>
+          </div>
+
+          <div class="milestoneList" id="milestoneList" aria-label="Milestone checklist"></div>
+        </section>
+
+        <section class="card span2" aria-labelledby="badgesTitle">
+          <div class="cardHeader">
+            <h2 class="cardTitle" id="badgesTitle">Achievement Badges</h2>
+            <div class="cardHint">Unlock badges by reaching milestones.</div>
+          </div>
+          <div class="badgesGrid" id="badgesGrid"></div>
+        </section>
+
+        <section class="card span2" aria-labelledby="sessionsTitle">
+          <div class="cardHeader">
+            <h2 class="cardTitle" id="sessionsTitle">Recent Sessions</h2>
+            <div class="cardHint">Stored locally in your browser (localStorage).</div>
+          </div>
+
+          <div class="sessionTools">
+            <button class="btn subtle" id="exportBtn" type="button">Export JSON</button>
+            <label class="fileBtn btn subtle">
+              Import JSON
+              <input id="importInput" type="file" accept="application/json" hidden />
+            </label>
+            <button class="btn" id="clearSessionsBtn" type="button">Clear sessions</button>
+          </div>
+
+          <div class="sessionFilters" aria-label="Filter sessions">
+            <button class="filterBtn active" data-filter="all" type="button">All</button>
+            <button class="filterBtn" data-filter="study" type="button">Study</button>
+            <button class="filterBtn" data-filter="break" type="button">Break</button>
+          </div>
+
+          <div class="sessionList" id="sessionList"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modalOverlay" id="analyticsOverlay" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="analyticsTitle">
+        <div class="modalHeader">
+          <div>
+            <div class="modalTitle" id="analyticsTitle">Study Analytics</div>
+            <div class="modalHint">Charts update from your saved sessions (localStorage).</div>
+          </div>
+          <button class="btn subtle modalClose" id="closeAnalyticsBtn" type="button">Close</button>
+        </div>
+
+        <div class="charts">
+          <div class="chartCard">
+            <div class="chartTitle">Daily study time (last 14 days)</div>
+            <canvas id="dailyChart" height="120"></canvas>
+          </div>
+          <div class="chartCard">
+            <div class="chartTitle">Weekly trend (last 8 weeks)</div>
+            <canvas id="weeklyChart" height="120"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modalOverlay" id="dedicationOverlay" aria-hidden="true">
+      <div class="modal dedicationModal" role="dialog" aria-modal="true" aria-labelledby="dedicationTitle">
+        <div class="modalHeader">
+          <div>
+            <div class="modalTitle" id="dedicationTitle">Dedicate Your Water</div>
+            <div class="modalHint" id="dedicationHint">
+              Choose where this completed study session should send its water.
+            </div>
+          </div>
+          <button class="btn subtle modalClose" id="closeDedicationBtn" type="button">Skip for now</button>
+        </div>
+
+        <div class="dedicationChoices" id="dedicationChoices"></div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
