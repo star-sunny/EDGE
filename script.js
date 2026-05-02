@@ -5,10 +5,13 @@
   const LEGACY_STORAGE_KEYS = ["studyTracker.v2", "studyTracker.v1"];
   const THEME_KEY = "studyTracker.theme";
   const SOUND_KEY = "studyTracker.soundEnabled";
+  const ACTIVE_TIMER_KEY = "edgeTracker.activeTimer.v1";
   const DEFAULT_WEEKLY_GOAL_HOURS = 15;
-  const MILESTONES_HOURS = [10, 50, 100, 1000];
+  const DEFAULT_DAILY_GOAL_HOURS = 4;
+  const MILESTONES_HOURS = [15, 25, 75, 100, 150, 200, 250, 300, 500, 600, 750, 1000];
   const MIN_SAVEABLE_STUDY_SEC = 5 * 60;
   const GLASS_FILL_SEC = 10 * 60;
+  const MAX_CUSTOM_TIMER_MINUTES = 180;
   const SPECTRUM_BANDS = [
     {
       name: "Violet",
@@ -88,6 +91,7 @@
 
   let sharedAudioContext = null;
   let cachedNoiseBuffer = null;
+  let activeAlarm = null;
 
   const $ = (id) => document.getElementById(id);
 
@@ -96,8 +100,10 @@
     startBtn: $("startBtn"),
     pauseBtn: $("pauseBtn"),
     resetBtn: $("resetBtn"),
+    stopAlarmBtn: $("stopAlarmBtn"),
     focusPauseBtn: $("focusPauseBtn"),
     focusSoundBtn: $("focusSoundBtn"),
+    focusStopAlarmBtn: $("focusStopAlarmBtn"),
     focusExitBtn: $("focusExitBtn"),
     timerProgressText: $("timerProgressText"),
     timerModeLabel: $("timerModeLabel"),
@@ -117,6 +123,7 @@
     customMinutes: $("customMinutes"),
     customSeconds: $("customSeconds"),
     customStoreMode: $("customStoreMode"),
+    sessionNameInput: $("sessionNameInput"),
     presetBtns: [...document.querySelectorAll(".presetBtn")],
 
     soundToggle: $("soundToggle"),
@@ -129,6 +136,8 @@
     bestStreakValue: $("bestStreakValue"),
     averageSessionValue: $("averageSessionValue"),
     averageSessionSub: $("averageSessionSub"),
+    waterBankValue: $("waterBankValue"),
+    waterBankSub: $("waterBankSub"),
     plantsValue: $("plantsValue"),
     plantsSub: $("plantsSub"),
     birdsValue: $("birdsValue"),
@@ -140,8 +149,13 @@
 
     weeklyGoalInput: $("weeklyGoalInput"),
     weeklyGoalValue: $("weeklyGoalValue"),
+    weeklyGoalWeek: $("weeklyGoalWeek"),
     weeklyGoalFill: $("weeklyGoalFill"),
     weeklyGoalMeta: $("weeklyGoalMeta"),
+    dailyGoalInput: $("dailyGoalInput"),
+    dailyGoalValue: $("dailyGoalValue"),
+    dailyGoalFill: $("dailyGoalFill"),
+    dailyGoalMeta: $("dailyGoalMeta"),
 
     bestDayValue: $("bestDayValue"),
     bestDaySub: $("bestDaySub"),
@@ -164,6 +178,10 @@
     milestoneList: $("milestoneList"),
 
     badgesGrid: $("badgesGrid"),
+    activityMonths: $("activityMonths"),
+    activityHeatmap: $("activityHeatmap"),
+    activitySummary: $("activitySummary"),
+    activityHint: $("activityHint"),
 
     dailyChart: $("dailyChart"),
     weeklyChart: $("weeklyChart"),
@@ -260,6 +278,11 @@
     return `${year}-W${pad2(weekIndex)}`;
   }
 
+
+  function getWeekNumberLocal(d) {
+    const weekKey = getWeekKeyLocal(d);
+    return Number(weekKey.split("-W")[1] ?? 0);
+  }
   function safeJsonParse(text, fallback) {
     try {
       return JSON.parse(text);
@@ -275,7 +298,19 @@
       durationSec: clamp(Number(session.durationSec ?? 0), 0, 365 * 24 * 3600),
       type: session.type === "break" ? "break" : "study",
       mode: typeof session.mode === "string" ? session.mode : "unknown",
+      title: typeof session.title === "string" ? session.title.trim().slice(0, 48) : "",
     };
+  }
+
+  function getRequiredDedicationSeconds(optionKey) {
+    const option = DEDICATION_OPTIONS.find((item) => item.key === optionKey);
+    return option ? option.minutes * 60 : 0;
+  }
+
+  function deriveDedicatedStudySeconds(dedicationCounts) {
+    return Object.entries(dedicationCounts ?? {}).reduce((total, [key, count]) => {
+      return total + getRequiredDedicationSeconds(key) * clamp(Number(count ?? 0), 0, 100000);
+    }, 0);
   }
 
   function loadState() {
@@ -289,6 +324,7 @@
       unlockedMilestones: [],
       bestStreak: 0,
       weeklyGoalHours: DEFAULT_WEEKLY_GOAL_HOURS,
+      dailyGoalHours: DEFAULT_DAILY_GOAL_HOURS,
       sessionFilter: "all",
       dedicationCounts: {
         plant: 0,
@@ -296,6 +332,7 @@
         elephant: 0,
         cow: 0,
       },
+      dedicatedStudySeconds: 0,
       lastDedication: null,
     };
 
@@ -310,6 +347,7 @@
         : [],
       bestStreak: clamp(Number(parsed.bestStreak ?? 0), 0, 100000),
       weeklyGoalHours: clamp(Number(parsed.weeklyGoalHours ?? DEFAULT_WEEKLY_GOAL_HOURS), 1, 80),
+      dailyGoalHours: clamp(Number(parsed.dailyGoalHours ?? DEFAULT_DAILY_GOAL_HOURS), 1, 24),
       sessionFilter: ["all", "study", "break"].includes(parsed.sessionFilter) ? parsed.sessionFilter : "all",
       dedicationCounts: {
         plant: clamp(Number(parsed.dedicationCounts?.plant ?? 0), 0, 100000),
@@ -317,6 +355,11 @@
         elephant: clamp(Number(parsed.dedicationCounts?.elephant ?? 0), 0, 100000),
         cow: clamp(Number(parsed.dedicationCounts?.cow ?? 0), 0, 100000),
       },
+      dedicatedStudySeconds: clamp(
+        Number(parsed.dedicatedStudySeconds ?? deriveDedicatedStudySeconds(parsed.dedicationCounts)),
+        0,
+        365 * 24 * 3600,
+      ),
       lastDedication:
         parsed.lastDedication && typeof parsed.lastDedication === "object"
           ? {
@@ -337,8 +380,10 @@
         unlockedMilestones: state.unlockedMilestones,
         bestStreak: state.bestStreak,
         weeklyGoalHours: state.weeklyGoalHours,
+        dailyGoalHours: state.dailyGoalHours,
         sessionFilter: state.sessionFilter,
         dedicationCounts: state.dedicationCounts,
+        dedicatedStudySeconds: state.dedicatedStudySeconds,
         lastDedication: state.lastDedication,
       }),
     );
@@ -363,6 +408,10 @@
 
   function totalStudySeconds(state) {
     return state.sessions.reduce((acc, s) => (s.type === "study" ? acc + s.durationSec : acc), 0);
+  }
+
+  function availableDedicationSeconds(state) {
+    return Math.max(0, totalStudySeconds(state) - clamp(Number(state.dedicatedStudySeconds ?? 0), 0, 365 * 24 * 3600));
   }
 
   function computeDailyTotals(state) {
@@ -448,23 +497,67 @@
     return sharedAudioContext;
   }
 
+  function scheduleAlarmPulse(ctx) {
+    if (!activeAlarm) return;
+    const now = ctx.currentTime;
+    const notes = [880, 660, 980, 740];
+
+    notes.forEach((frequency, index) => {
+      try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+        const startAt = now + index * 0.18;
+        const endAt = startAt + 0.15;
+
+        osc.type = "square";
+        osc.frequency.setValueAtTime(frequency, startAt);
+        filter.type = "lowpass";
+        filter.frequency.value = 1800;
+        filter.Q.value = 0.8;
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(0.18, startAt + 0.018);
+        gain.gain.exponentialRampToValueAtTime(0.0001, endAt);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        activeAlarm.nodes.add(osc);
+        osc.onended = () => activeAlarm?.nodes.delete(osc);
+        osc.start(startAt);
+        osc.stop(endAt + 0.02);
+      } catch {
+        // ignore individual alarm pulse failures
+      }
+    });
+  }
+
+  function stopDoneSound() {
+    if (!activeAlarm) return;
+    clearInterval(activeAlarm.intervalId);
+    for (const node of activeAlarm.nodes) {
+      try {
+        node.stop();
+      } catch {
+        // already stopped
+      }
+    }
+    activeAlarm = null;
+    setButtons();
+  }
+
   function playDoneSound() {
     try {
       const ctx = getSharedAudioContext();
       if (!ctx) return;
 
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = 880;
-      gain.gain.value = 0.0001;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      const now = ctx.currentTime;
-      gain.gain.exponentialRampToValueAtTime(0.2, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
-      osc.stop(now + 0.5);
+      stopDoneSound();
+      activeAlarm = {
+        intervalId: window.setInterval(() => scheduleAlarmPulse(ctx), 1050),
+        nodes: new Set(),
+      };
+      scheduleAlarmPulse(ctx);
+      setButtons();
     } catch {
       // ignore audio failures
     }
@@ -550,19 +643,24 @@
   }
 
   function getDedicationOptionsForDuration(durationSec) {
-    const sessionMinutes = Math.floor(durationSec / 60);
-    return DEDICATION_OPTIONS.filter((option) => sessionMinutes >= option.minutes);
+    const availableMinutes = Math.floor(durationSec / 60);
+    return DEDICATION_OPTIONS.filter((option) => availableMinutes >= option.minutes);
   }
 
-  function saveDedication(state, option, durationSec) {
+  function saveDedication(state, option) {
     state.dedicationCounts[option.key] = (state.dedicationCounts[option.key] ?? 0) + 1;
+    state.dedicatedStudySeconds = (state.dedicatedStudySeconds ?? 0) + option.minutes * 60;
     state.lastDedication = {
       key: option.key,
       label: option.label,
-      durationSec,
+      durationSec: option.minutes * 60,
       completedAt: new Date().toISOString(),
     };
     saveState(state);
+  }
+
+  function getSessionTitle() {
+    return (els.sessionNameInput?.value ?? "").trim().slice(0, 48);
   }
 
   function prettifyMode(mode) {
@@ -634,6 +732,92 @@
     };
   }
 
+
+  function getActivityLevel(seconds, dailyGoalHours) {
+    if (seconds <= 0) return 0;
+    const dailyGoalSeconds = Math.max(30 * 60, Number(dailyGoalHours || DEFAULT_DAILY_GOAL_HOURS) * 3600);
+    const ratio = seconds / dailyGoalSeconds;
+    if (ratio >= 1) return 4;
+    if (ratio >= 0.66) return 3;
+    if (ratio >= 0.33) return 2;
+    return 1;
+  }
+
+  function renderActivityHeatmap(state, dailyMap) {
+    if (!els.activityHeatmap || !els.activityMonths) return;
+
+    const today = startOfLocalDay(new Date());
+    const weekStart = addDays(startOfLocalWeek(today), -52 * 7);
+    const weeks = 53;
+    const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const monthFormatter = new Intl.DateTimeFormat(undefined, { month: "short" });
+    const dateFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+    els.activityMonths.innerHTML = "";
+    els.activityHeatmap.innerHTML = "";
+    els.activityMonths.style.gridTemplateColumns = `repeat(${weeks}, 14px)`;
+    els.activityHeatmap.style.gridTemplateColumns = `repeat(${weeks}, 14px)`;
+
+    let activeDays = 0;
+    let totalSeconds = 0;
+    let strongestDay = { key: null, seconds: 0 };
+    let previousMonth = null;
+
+    for (let week = 0; week < weeks; week++) {
+      const monday = addDays(weekStart, week * 7);
+      const weekDates = Array.from({ length: 7 }, (_, day) => addDays(monday, day));
+      const labelDate = weekDates.find((date) => date.getDate() === 1 && date <= today) ??
+        (week === 0 ? weekDates.find((date) => date <= today) : null);
+      const month = labelDate?.getMonth() ?? previousMonth;
+      if (labelDate && month !== previousMonth) {
+        const label = document.createElement("span");
+        label.textContent = monthFormatter.format(labelDate);
+        label.style.gridColumn = `${week + 1} / span 4`;
+        els.activityMonths.appendChild(label);
+        previousMonth = month;
+      }
+
+      for (let day = 0; day < 7; day++) {
+        const date = weekDates[day];
+        const key = toLocalDateKey(date);
+        const seconds = date > today ? 0 : dailyMap.get(key) ?? 0;
+        const cell = document.createElement("div");
+        const level = date > today ? 0 : getActivityLevel(seconds, state.dailyGoalHours);
+        cell.className = `activityCell level${level}`;
+        cell.style.gridColumn = String(week + 1);
+        cell.style.gridRow = String(day + 1);
+        cell.setAttribute("role", "img");
+
+        if (date > today) {
+          cell.classList.add("isFuture");
+          cell.setAttribute("aria-label", `${dayNames[day]}, ${dateFormatter.format(date)} has not happened yet`);
+        } else {
+          if (seconds > 0) {
+            activeDays += 1;
+            totalSeconds += seconds;
+            if (seconds > strongestDay.seconds) strongestDay = { key, seconds };
+          }
+          const duration = seconds > 0 ? formatDurationShort(seconds) : "No study time";
+          cell.title = `${duration} on ${dateFormatter.format(date)}`;
+          cell.setAttribute("aria-label", `${duration} on ${dayNames[day]}, ${dateFormatter.format(date)}`);
+        }
+
+        els.activityHeatmap.appendChild(cell);
+      }
+    }
+
+    const totalLabel = totalSeconds > 0 ? formatHMFromSeconds(totalSeconds) : "0m";
+    els.activitySummary.textContent = `${activeDays} active day${activeDays === 1 ? "" : "s"} in the last 12 months`;
+    if (strongestDay.key) {
+      const strongestDate = new Date(`${strongestDay.key}T00:00:00`);
+      els.activityHint.textContent = `${totalLabel} studied across the map. Best square: ${formatDurationShort(
+        strongestDay.seconds,
+      )} on ${dateFormatter.format(strongestDate)}.`;
+    } else {
+      els.activityHint.textContent = "Save study sessions to fill your activity map.";
+    }
+  }
+
   function renderMilestones(totalHours) {
     const { unlocked, next } = getMilestoneStatus(totalHours);
 
@@ -669,12 +853,7 @@
 
   function renderBadges(state, totalHours) {
     const unlockedNow = new Set(MILESTONES_HOURS.filter((h) => totalHours >= h));
-    const badgeIcons = {
-      10: "10H",
-      50: "50H",
-      100: "100",
-      1000: "1K",
-    };
+    const formatBadgeIcon = (hours) => (hours >= 1000 ? `${hours / 1000}K` : `${hours}H`);
 
     els.badgesGrid.innerHTML = "";
 
@@ -684,7 +863,7 @@
       card.className = `badge${isUnlocked ? "" : " locked"}`;
       card.innerHTML = `
         <div class="badgeTag">${isUnlocked ? "Unlocked" : "Locked"}</div>
-        <div class="badgeIcon" aria-hidden="true">${badgeIcons[h] ?? "GO"}</div>
+        <div class="badgeIcon" aria-hidden="true">${formatBadgeIcon(h)}</div>
         <div class="badgeTitle">${h} Hours Completed</div>
         <div class="badgeSub">${
           isUnlocked ? "Nice work. Keep reinforcing the habit." : `Progress: ${Math.min(100, Math.floor((totalHours / h) * 100))}%`
@@ -744,10 +923,11 @@
       });
       const item = document.createElement("div");
       item.className = "sessionItem";
+      const sessionTitle = session.title || (session.type === "study" ? "Untitled study session" : "Break");
       item.innerHTML = `
         <div class="sessionMeta">
-          <div class="sessionPrimary">${formatHMS(session.durationSec)}</div>
-          <div class="sessionSecondary">${nice} · ${prettifyMode(session.mode)}</div>
+          <div class="sessionPrimary">${sessionTitle}</div>
+          <div class="sessionSecondary">${formatHMS(session.durationSec)} | ${nice} | ${prettifyMode(session.mode)}</div>
         </div>
         <div class="sessionPill ${session.type === "break" ? "break" : ""}">${session.type === "break" ? "Break" : "Study"}</div>
       `;
@@ -934,10 +1114,13 @@
   }
 
   function openDedication(durationSec) {
-    const eligible = getDedicationOptionsForDuration(durationSec);
+    const bankedSec = availableDedicationSeconds(appState);
+    const eligible = getDedicationOptionsForDuration(bankedSec);
     if (eligible.length === 0) return;
 
-    els.dedicationHint.textContent = `This ${formatDurationShort(durationSec)} study session can be dedicated to one of these:`;
+    els.dedicationHint.textContent = `Your latest ${formatDurationShort(
+      durationSec,
+    )} session added to your water bank. You now have ${formatDurationShort(bankedSec)} available to dedicate.`;
     els.dedicationChoices.innerHTML = "";
 
     for (const option of eligible) {
@@ -950,7 +1133,7 @@
         <div class="dedicationMeta">${option.blurb}</div>
       `;
       button.addEventListener("click", () => {
-        saveDedication(appState, option, durationSec);
+        saveDedication(appState, option);
         appState = loadState();
         renderStatsAndSystems(appState);
         closeDedication();
@@ -964,10 +1147,18 @@
 
   function renderGoalAndInsights(state, insights) {
     const weekHours = insights.weekSeconds / 3600;
+    const todaySec = insights.daily.get(toLocalDateKey(new Date())) ?? 0;
+    const dailyGoalSeconds = state.dailyGoalHours * 3600;
+    const dailyGoalPct = dailyGoalSeconds > 0 ? clamp((todaySec / dailyGoalSeconds) * 100, 0, 100) : 0;
     els.weeklyGoalInput.value = String(state.weeklyGoalHours);
     els.weeklyGoalValue.textContent = String(state.weeklyGoalHours);
+    if (els.weeklyGoalWeek) els.weeklyGoalWeek.textContent = `Week ${getWeekNumberLocal(new Date())}`;
     els.weeklyGoalFill.style.width = `${insights.weeklyGoalPct}%`;
     els.weeklyGoalMeta.textContent = `${weekHours.toFixed(1)}h of ${state.weeklyGoalHours}h this week`;
+    els.dailyGoalInput.value = String(state.dailyGoalHours);
+    els.dailyGoalValue.textContent = String(state.dailyGoalHours);
+    els.dailyGoalFill.style.width = `${dailyGoalPct}%`;
+    els.dailyGoalMeta.textContent = `${(todaySec / 3600).toFixed(1)}h of ${state.dailyGoalHours}h today`;
 
     if (insights.bestDayKey) {
       const date = new Date(`${insights.bestDayKey}T00:00:00`);
@@ -994,7 +1185,7 @@
       const dedicationWhen = dedicationDate.toLocaleDateString(undefined, { month: "short", day: "numeric" });
       els.lastDedicationText.textContent = `${state.lastDedication.label} received water from a ${formatDurationShort(
         state.lastDedication.durationSec,
-      )} session on ${dedicationWhen}.`;
+      )} study-time dedication on ${dedicationWhen}.`;
     } else {
       els.lastDedicationText.textContent =
         "Finish an eligible study session to dedicate water to a plant, bird, elephant, or cow.";
@@ -1010,7 +1201,8 @@
   function renderStatsAndSystems(state) {
     const totalSec = totalStudySeconds(state);
     const totalHours = totalSec / 3600;
-    const totalMin = Math.floor(totalSec / 60);
+    const availableSec = availableDedicationSeconds(state);
+    const availableMin = Math.floor(availableSec / 60);
     const studySessions = state.sessions.filter((s) => s.type === "study");
     const insights = computeInsights(state);
 
@@ -1038,25 +1230,38 @@
           : "Steady sessions"
         : "Build consistency";
 
+    els.waterBankValue.textContent = availableSec >= 3600 ? formatHMFromSeconds(availableSec) : `${minutesFromSeconds(availableSec)}m`;
+    const nextWaterOption = DEDICATION_OPTIONS.filter((option) => availableSec >= option.minutes * 60).sort(
+      (a, b) => b.minutes - a.minutes,
+    )[0];
+    els.waterBankSub.textContent = nextWaterOption
+      ? `Enough fresh water for ${nextWaterOption.label.toLowerCase()} dedication`
+      : "Earn fresh study time to dedicate";
+
     els.plantsValue.textContent = String(state.dedicationCounts.plant ?? 0);
     els.birdsValue.textContent = String(state.dedicationCounts.birds ?? 0);
     els.elephantValue.textContent = String(state.dedicationCounts.elephant ?? 0);
     els.cowValue.textContent = String(state.dedicationCounts.cow ?? 0);
 
     const cycleRemaining = (minutes) => {
-      const remainder = totalMin % minutes;
+      const remainder = availableMin % minutes;
       return remainder === 0 ? minutes : minutes - remainder;
     };
     const plantRemaining = cycleRemaining(30);
     const birdRemaining = cycleRemaining(10);
     const elephantRemaining = cycleRemaining(50);
     const cowRemaining = cycleRemaining(35);
-    els.plantsSub.textContent = totalMin < 30 ? `Need ${Math.max(0, 30 - totalMin)} more minutes for your first plant` : `Next plant pace checkpoint in ${plantRemaining} min`;
-    els.birdsSub.textContent = totalMin < 10 ? `Need ${Math.max(0, 10 - totalMin)} more minutes for your first bird` : `Next bird pace checkpoint in ${birdRemaining} min`;
-    els.elephantSub.textContent = totalMin < 50 ? `Need ${Math.max(0, 50 - totalMin)} more minutes for your first elephant` : `Next elephant pace checkpoint in ${elephantRemaining} min`;
-    els.cowSub.textContent = totalMin < 35 ? `Need ${Math.max(0, 35 - totalMin)} more minutes for your first cow` : `Next cow pace checkpoint in ${cowRemaining} min`;
+    els.plantsSub.textContent =
+      availableMin < 30 ? `Need ${Math.max(0, 30 - availableMin)} new minutes for your next plant` : `Next plant dedication in ${plantRemaining} fresh min`;
+    els.birdsSub.textContent =
+      availableMin < 10 ? `Need ${Math.max(0, 10 - availableMin)} new minutes for your next bird` : `Next bird dedication in ${birdRemaining} fresh min`;
+    els.elephantSub.textContent =
+      availableMin < 50 ? `Need ${Math.max(0, 50 - availableMin)} new minutes for your next elephant` : `Next elephant dedication in ${elephantRemaining} fresh min`;
+    els.cowSub.textContent =
+      availableMin < 35 ? `Need ${Math.max(0, 35 - availableMin)} new minutes for your next cow` : `Next cow dedication in ${cowRemaining} fresh min`;
 
     renderGoalAndInsights(state, insights);
+    renderActivityHeatmap(state, insights.daily);
     renderMilestones(totalHours);
     renderBadges(state, totalHours);
     renderSessionFilter(state);
@@ -1077,6 +1282,8 @@
     endAtPerfMs: null,
     displayWhole: null,
     savedStudySec: 0,
+    sessionStartedAt: null,
+    lastPersistedAtMs: 0,
   };
 
   function getElapsedTimerSeconds() {
@@ -1242,12 +1449,44 @@
     if (!canSave) return 0;
 
     const mode = timer.mode === "pomodoro" ? `pomodoro-${timer.pomodoroPhase}` : "custom";
-    addSession(appState, { durationSec: unsavedSec, type: "study", mode });
+    addSession(appState, { durationSec: unsavedSec, type: "study", mode, title: getSessionTitle() });
     timer.savedStudySec += unsavedSec;
     return unsavedSec;
   }
 
-  function setMode(mode) {
+
+  function clearActiveTimerSnapshot() {
+    localStorage.removeItem(ACTIVE_TIMER_KEY);
+  }
+
+  function saveActiveTimerSnapshot({ force = false } = {}) {
+    if (!timer.running && !force) return;
+    const nowMs = Date.now();
+    if (!force && nowMs - (timer.lastPersistedAtMs || 0) < 5000) return;
+    timer.lastPersistedAtMs = nowMs;
+
+    localStorage.setItem(
+      ACTIVE_TIMER_KEY,
+      JSON.stringify({
+        mode: timer.mode,
+        pomodoroPhase: timer.pomodoroPhase,
+        targetSec: timer.targetSec,
+        remainingSec: timer.remainingSec,
+        savedStudySec: timer.savedStudySec,
+        sessionStartedAt: timer.sessionStartedAt,
+        updatedAt: new Date(nowMs).toISOString(),
+        custom: {
+          hours: els.customHours.value,
+          minutes: els.customMinutes.value,
+          seconds: els.customSeconds.value,
+          storeMode: els.customStoreMode.value,
+          title: getSessionTitle(),
+        },
+      }),
+    );
+  }
+
+  function applyTimerModeUi(mode) {
     timer.mode = mode;
     const isPomo = mode === "pomodoro";
     els.modePomodoroBtn.classList.toggle("active", isPomo);
@@ -1256,6 +1495,72 @@
     els.modeCustomBtn.setAttribute("aria-selected", !isPomo ? "true" : "false");
     els.pomodoroPane.classList.toggle("hidden", !isPomo);
     els.customPane.classList.toggle("hidden", isPomo);
+  }
+
+  function restoreActiveTimerSnapshot() {
+    const parsed = safeJsonParse(localStorage.getItem(ACTIVE_TIMER_KEY), null);
+    if (!parsed || typeof parsed !== "object") return false;
+
+    const targetSec = clamp(Number(parsed.targetSec ?? 0), 0, MAX_CUSTOM_TIMER_MINUTES * 60);
+    const updatedAtMs = new Date(parsed.updatedAt ?? Date.now()).getTime();
+    const elapsedAwaySec = Number.isFinite(updatedAtMs) ? Math.max(0, (Date.now() - updatedAtMs) / 1000) : 0;
+    const storedRemainingSec = clamp(Number(parsed.remainingSec ?? targetSec), 0, targetSec);
+    const remainingSec = Math.max(0, storedRemainingSec - elapsedAwaySec);
+
+    timer.mode = parsed.mode === "custom" ? "custom" : "pomodoro";
+    timer.pomodoroPhase = parsed.pomodoroPhase === "break" ? "break" : "focus";
+    timer.targetSec = targetSec > 0 ? targetSec : Pomodoro.focusSec;
+    timer.remainingSec = remainingSec;
+    timer.savedStudySec = clamp(Number(parsed.savedStudySec ?? 0), 0, timer.targetSec);
+    timer.sessionStartedAt = parsed.sessionStartedAt || new Date().toISOString();
+    timer.lastPersistedAtMs = 0;
+
+    if (parsed.custom && typeof parsed.custom === "object") {
+      els.customHours.value = String(clamp(Number(parsed.custom.hours ?? 0), 0, Math.floor(MAX_CUSTOM_TIMER_MINUTES / 60)));
+      els.customMinutes.value = String(clamp(Number(parsed.custom.minutes ?? 0), 0, 59));
+      els.customSeconds.value = String(clamp(Number(parsed.custom.seconds ?? 0), 0, 59));
+      els.customStoreMode.value = parsed.custom.storeMode === "break" ? "break" : "study";
+      els.sessionNameInput.value = typeof parsed.custom.title === "string" ? parsed.custom.title.slice(0, 48) : "";
+    }
+
+    applyTimerModeUi(timer.mode);
+    if (timer.mode === "pomodoro") {
+      const phase = timer.pomodoroPhase;
+      if (phase === "focus") {
+        els.pomoPhasePill.textContent = "Focus (25:00)";
+        els.pomoPhasePill.style.background = "rgba(38, 199, 111, 0.14)";
+        els.pomoPhasePill.style.borderColor = "rgba(38, 199, 111, 0.18)";
+      } else {
+        els.pomoPhasePill.textContent = "Break (05:00)";
+        els.pomoPhasePill.style.background = "rgba(245, 158, 11, 0.14)";
+        els.pomoPhasePill.style.borderColor = "rgba(245, 158, 11, 0.18)";
+      }
+    }
+
+    if (remainingSec <= 0) {
+      timer.running = false;
+      timer.remainingSec = 0;
+      if (shouldCurrentTimerCountAsStudy()) savePartialStudyProgress({ force: true });
+      clearActiveTimerSnapshot();
+      timer.savedStudySec = 0;
+      renderTimer();
+      renderStatsAndSystems(appState);
+      return true;
+    }
+
+    timer.running = true;
+    timer.lastSecondShown = Math.ceil(timer.remainingSec);
+    timer.lastDropSecondPlayed = Math.floor(getElapsedTimerSeconds());
+    timer.displayWhole = null;
+    setFocusMode(true);
+    renderTimer();
+    setButtons();
+    renderStatsAndSystems(appState);
+    startTick();
+    return true;
+  }
+  function setMode(mode) {
+    applyTimerModeUi(mode);
     resetTimerToSelected();
   }
 
@@ -1278,10 +1583,10 @@
   }
 
   function getCustomTargetSeconds() {
-    const hours = clamp(Number(els.customHours.value || 0), 0, 23);
+    const hours = clamp(Number(els.customHours.value || 0), 0, Math.floor(MAX_CUSTOM_TIMER_MINUTES / 60));
     const minutes = clamp(Number(els.customMinutes.value || 0), 0, 59);
     const seconds = clamp(Number(els.customSeconds.value || 0), 0, 59);
-    return hours * 3600 + minutes * 60 + seconds;
+    return clamp(hours * 3600 + minutes * 60 + seconds, 0, MAX_CUSTOM_TIMER_MINUTES * 60);
   }
 
   function stopTick() {
@@ -1316,16 +1621,11 @@
     timer.lastDropSecondPlayed = elapsedWholeSeconds;
   }
 
-  function setButtons() {
-    els.startBtn.disabled = timer.running;
-    els.pauseBtn.disabled = !timer.running;
-    if (els.focusPauseBtn) els.focusPauseBtn.disabled = !timer.running;
-    const dot = document.querySelector(".timerPulseDot");
-    dot?.classList.toggle("running", timer.running);
-    dot?.classList.toggle("paused", !timer.running && timer.remainingSec > 0 && timer.remainingSec < timer.targetSec);
-
+  function updateTimerProgressText() {
     const metrics = getGlassMetrics();
-    if (timer.running) {
+    if (activeAlarm) {
+      els.timerProgressText.textContent = "Session complete | alarm ringing";
+    } else if (timer.running) {
       const completedText =
         metrics.completedGlasses > 0 ? ` | ${metrics.completedGlasses} full glass${metrics.completedGlasses === 1 ? "" : "es"}` : "";
       els.timerProgressText.textContent = `Glass ${metrics.activeGlassIndex + 1} filling${completedText}`;
@@ -1338,14 +1638,30 @@
     }
   }
 
+  function setButtons() {
+    els.startBtn.disabled = timer.running;
+    els.pauseBtn.disabled = !timer.running;
+    if (els.focusPauseBtn) els.focusPauseBtn.disabled = !timer.running;
+    const alarmActive = Boolean(activeAlarm);
+    if (els.stopAlarmBtn) els.stopAlarmBtn.hidden = !alarmActive;
+    if (els.focusStopAlarmBtn) els.focusStopAlarmBtn.hidden = !alarmActive;
+    const dot = document.querySelector(".timerPulseDot");
+    dot?.classList.toggle("running", timer.running);
+    dot?.classList.toggle("paused", !timer.running && timer.remainingSec > 0 && timer.remainingSec < timer.targetSec);
+    updateTimerProgressText();
+  }
+
   function renderTimer() {
     els.timerDisplay.textContent = formatHMS(timer.remainingSec);
     renderWaterGlasses();
     updateTimerLabels();
+    updateTimerProgressText();
   }
 
   function resetTimerToSelected() {
     savePartialStudyProgress({ force: true });
+    stopDoneSound();
+    clearActiveTimerSnapshot();
     stopTick();
     timer.running = false;
     setFocusMode(false);
@@ -1354,6 +1670,8 @@
     timer.endAtPerfMs = null;
     timer.displayWhole = null;
     timer.savedStudySec = 0;
+    timer.sessionStartedAt = null;
+    timer.lastPersistedAtMs = 0;
 
     if (timer.mode === "pomodoro") {
       setPomodoroPhase(timer.pomodoroPhase);
@@ -1382,6 +1700,7 @@
     const completedDurationSec = Math.round(timer.targetSec);
     const shouldStore = shouldCurrentTimerCountAsStudy();
     if (shouldStore && completedDurationSec > 0) savePartialStudyProgress({ force: true });
+    clearActiveTimerSnapshot();
 
     if (timer.mode === "pomodoro" && els.pomoAutoSwitch.checked) {
       setPomodoroPhase(timer.pomodoroPhase === "focus" ? "break" : "focus");
@@ -1394,6 +1713,8 @@
     renderStatsAndSystems(appState);
     if (shouldStore && completedDurationSec > 0) openDedication(completedDurationSec);
     timer.savedStudySec = 0;
+    timer.sessionStartedAt = null;
+    timer.lastPersistedAtMs = 0;
   }
 
   function startTick() {
@@ -1402,6 +1723,7 @@
     timer.dropIntervalId = window.setInterval(() => {
       if (!timer.running) return;
       refreshTimerRemaining();
+      saveActiveTimerSnapshot();
       syncDropEffects();
 
       if (timer.remainingSec <= 0) {
@@ -1426,11 +1748,13 @@
 
       syncDropEffects();
       renderWaterGlasses();
+      saveActiveTimerSnapshot();
 
       if (timer.remainingSec <= 0) {
         timer.remainingSec = 0;
         els.timerDisplay.textContent = formatHMS(0);
         renderWaterGlasses();
+        saveActiveTimerSnapshot({ force: true });
         onTimerDone();
         return;
       }
@@ -1443,6 +1767,7 @@
 
   function startTimer() {
     if (timer.running) return;
+    stopDoneSound();
     getSharedAudioContext();
     if (timer.mode === "custom") {
       const target = getCustomTargetSeconds();
@@ -1452,12 +1777,14 @@
       }
     }
     timer.running = true;
+    if (!timer.sessionStartedAt) timer.sessionStartedAt = new Date().toISOString();
     setFocusMode(true);
     timer.lastSecondShown = Math.ceil(timer.remainingSec);
     timer.lastDropSecondPlayed = Math.floor(getElapsedTimerSeconds());
     timer.displayWhole = null;
     setButtons();
     updateTimerLabels();
+    saveActiveTimerSnapshot({ force: true });
     startTick();
   }
 
@@ -1466,6 +1793,9 @@
     timer.running = false;
     stopTick();
     savePartialStudyProgress({ force: true });
+    clearActiveTimerSnapshot();
+    timer.sessionStartedAt = null;
+    timer.lastPersistedAtMs = 0;
     setFocusMode(false);
     appState = loadState();
     renderStatsAndSystems(appState);
@@ -1510,12 +1840,18 @@
       : merged.unlockedMilestones;
     merged.bestStreak = clamp(Number(incoming.bestStreak ?? merged.bestStreak ?? 0), 0, 100000);
     merged.weeklyGoalHours = clamp(Number(incoming.weeklyGoalHours ?? merged.weeklyGoalHours), 1, 80);
+    merged.dailyGoalHours = clamp(Number(incoming.dailyGoalHours ?? merged.dailyGoalHours ?? DEFAULT_DAILY_GOAL_HOURS), 1, 24);
     merged.dedicationCounts = {
       plant: clamp(Number(incoming.dedicationCounts?.plant ?? merged.dedicationCounts.plant ?? 0), 0, 100000),
       birds: clamp(Number(incoming.dedicationCounts?.birds ?? merged.dedicationCounts.birds ?? 0), 0, 100000),
       elephant: clamp(Number(incoming.dedicationCounts?.elephant ?? merged.dedicationCounts.elephant ?? 0), 0, 100000),
       cow: clamp(Number(incoming.dedicationCounts?.cow ?? merged.dedicationCounts.cow ?? 0), 0, 100000),
     };
+    merged.dedicatedStudySeconds = clamp(
+      Number(incoming.dedicatedStudySeconds ?? deriveDedicatedStudySeconds(merged.dedicationCounts)),
+      0,
+      365 * 24 * 3600,
+    );
     merged.lastDedication =
       incoming.lastDedication && typeof incoming.lastDedication === "object"
         ? {
@@ -1535,6 +1871,7 @@
     state.unlockedMilestones = [];
     state.bestStreak = 0;
     state.dedicationCounts = { plant: 0, birds: 0, elephant: 0, cow: 0 };
+    state.dedicatedStudySeconds = 0;
     state.lastDedication = null;
     saveState(state);
   }
@@ -1555,8 +1892,9 @@
   }
 
   function setCustomPreset(minutes) {
-    els.customHours.value = "0";
-    els.customMinutes.value = String(minutes);
+    const totalMinutes = clamp(Number(minutes || 25), 1, MAX_CUSTOM_TIMER_MINUTES);
+    els.customHours.value = String(Math.floor(totalMinutes / 60));
+    els.customMinutes.value = String(totalMinutes % 60);
     els.customSeconds.value = "0";
     if (timer.mode === "custom" && !timer.running) resetTimerToSelected();
   }
@@ -1567,8 +1905,10 @@
     els.startBtn.addEventListener("click", startTimer);
     els.pauseBtn.addEventListener("click", pauseTimer);
     els.resetBtn.addEventListener("click", resetTimerToSelected);
+    els.stopAlarmBtn?.addEventListener("click", stopDoneSound);
     els.focusPauseBtn.addEventListener("click", pauseTimer);
     els.focusSoundBtn.addEventListener("click", toggleSoundEnabled);
+    els.focusStopAlarmBtn?.addEventListener("click", stopDoneSound);
     els.focusExitBtn.addEventListener("click", exitFocusMode);
 
     els.modePomodoroBtn.addEventListener("click", () => setMode("pomodoro"));
@@ -1587,12 +1927,17 @@
     for (const btn of els.presetBtns) {
       btn.addEventListener("click", () => {
         setMode("custom");
-        setCustomPreset(clamp(Number(btn.dataset.minutes || 25), 1, 120));
+        setCustomPreset(clamp(Number(btn.dataset.minutes || 25), 1, MAX_CUSTOM_TIMER_MINUTES));
       });
     }
 
     els.weeklyGoalInput.addEventListener("change", () => {
       appState.weeklyGoalHours = clamp(Number(els.weeklyGoalInput.value || DEFAULT_WEEKLY_GOAL_HOURS), 1, 80);
+      saveState(appState);
+      renderStatsAndSystems(appState);
+    });
+    els.dailyGoalInput.addEventListener("change", () => {
+      appState.dailyGoalHours = clamp(Number(els.dailyGoalInput.value || DEFAULT_DAILY_GOAL_HOURS), 1, 24);
       saveState(appState);
       renderStatsAndSystems(appState);
     });
@@ -1646,6 +1991,14 @@
       if (event.target === els.dedicationOverlay) closeDedication();
     });
 
+    window.addEventListener("beforeunload", () => {
+      if (timer.running) saveActiveTimerSnapshot({ force: true });
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden" && timer.running) saveActiveTimerSnapshot({ force: true });
+    });
+
     window.addEventListener("keydown", (event) => {
       if (event.target && ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) return;
       if (event.key === "Escape") {
@@ -1664,13 +2017,16 @@
     applyTheme(loadTheme());
     setSoundEnabled(loadSoundEnabled());
     setPomodoroPhase("focus");
-    setMode("pomodoro");
-    renderTimer();
+    applyTimerModeUi("pomodoro");
     renderSoundControls();
-    setButtons();
     wireEvents();
-    renderStatsAndSystems(appState);
+    if (!restoreActiveTimerSnapshot()) {
+      renderTimer();
+      setButtons();
+      renderStatsAndSystems(appState);
+    }
   }
 
   init();
 })();
+
