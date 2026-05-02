@@ -9,6 +9,12 @@
       content="EDGE is a modern study tracker with timer, streaks, goals, dedications, and analytics."
     />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -41,6 +47,11 @@
       <section class="heroPanel" aria-labelledby="heroTitle">
         <div class="heroCopy">
           <div class="heroEyebrow">EDGE focus dashboard</div>
+          <div class="heroTags" aria-label="Highlights">
+            <span class="heroTag">Live timer</span>
+            <span class="heroTag">Spectrum water</span>
+            <span class="heroTag">Habit momentum</span>
+          </div>
           <h1 class="heroTitle" id="heroTitle">Turn study time into visible care.</h1>
           <p class="heroText">
             Track focus sessions, grow your weekly goal, and dedicate earned water to plants, birds, or
@@ -67,6 +78,77 @@
       </section>
 
       <main class="grid">
+        <section class="card span2 goalsCard" aria-labelledby="goalsTitle">
+          <div class="cardHeader">
+            <h2 class="cardTitle" id="goalsTitle">Goals and Insights</h2>
+            <div class="cardHint">Keep weekly and daily targets visible while you study.</div>
+          </div>
+
+          <div class="goalsShowcase">
+            <div class="goalBox goalBoxFeature">
+              <div class="goalTop">
+                <div>
+                  <div class="goalLabelRow">
+                    <div class="goalLabel">Weekly goal</div>
+                    <div class="goalWeekBadge" id="weeklyGoalWeek">Week --</div>
+                  </div>
+                  <div class="goalValue"><span id="weeklyGoalValue">15</span> hours</div>
+                </div>
+                <label class="goalInputWrap">
+                  <span class="label" for="weeklyGoalInput">Edit goal</span>
+                  <input id="weeklyGoalInput" class="input goalInput" type="number" min="1" max="80" value="15" />
+                </label>
+              </div>
+              <div class="progressTrack progressTrackTall" aria-hidden="true">
+                <div class="progressFill" id="weeklyGoalFill" style="width: 0%"></div>
+              </div>
+              <div class="goalMeta" id="weeklyGoalMeta">0h of 15h this week</div>
+            </div>
+
+            <div class="goalBox goalBoxFeature">
+              <div class="goalTop">
+                <div>
+                  <div class="goalLabel">Daily goal</div>
+                  <div class="goalValue"><span id="dailyGoalValue">4</span> hours</div>
+                </div>
+                <label class="goalInputWrap">
+                  <span class="label" for="dailyGoalInput">Edit goal</span>
+                  <input id="dailyGoalInput" class="input goalInput" type="number" min="1" max="24" value="4" />
+                </label>
+              </div>
+              <div class="progressTrack progressTrackTall" aria-hidden="true">
+                <div class="progressFill" id="dailyGoalFill" style="width: 0%"></div>
+              </div>
+              <div class="goalMeta" id="dailyGoalMeta">0h of 4h today</div>
+            </div>
+          </div>
+
+          <div class="insightsList">
+            <div class="insightCard">
+              <div class="insightLabel">Best day</div>
+              <div class="insightValue" id="bestDayValue">-</div>
+              <div class="insightSub" id="bestDaySub">No study days yet</div>
+            </div>
+            <div class="insightCard">
+              <div class="insightLabel">Most used mode</div>
+              <div class="insightValue" id="topModeValue">-</div>
+              <div class="insightSub" id="topModeSub">Use the timer to learn your rhythm</div>
+            </div>
+            <div class="insightCard insightCardWide">
+              <div class="insightLabel">Coach note</div>
+              <div class="insightCopy" id="focusTipText">
+                Start with one solid session today. Momentum matters more than perfect duration.
+              </div>
+            </div>
+            <div class="insightCard insightCardWide">
+              <div class="insightLabel">Last dedication</div>
+              <div class="insightCopy" id="lastDedicationText">
+                Finish an eligible study session to dedicate water to a plant, bird, elephant, or cow.
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section class="card span2 timerCard" aria-labelledby="timerTitle">
           <div class="cardHeader">
             <h2 class="cardTitle" id="timerTitle">Study Timer</h2>
@@ -107,11 +189,13 @@
               <button class="btn primary" id="startBtn" type="button">Start</button>
               <button class="btn" id="pauseBtn" type="button" disabled>Pause</button>
               <button class="btn subtle" id="resetBtn" type="button">Reset</button>
+              <button class="btn alarmBtn" id="stopAlarmBtn" type="button" hidden>Stop alarm</button>
             </div>
 
             <div class="focusModeControls" aria-label="Focus mode controls">
               <button class="btn" id="focusPauseBtn" type="button" disabled>Pause</button>
               <button class="btn subtle" id="focusSoundBtn" type="button" aria-pressed="true">Sound on</button>
+              <button class="btn alarmBtn" id="focusStopAlarmBtn" type="button" hidden>Stop alarm</button>
               <button class="btn subtle" id="focusExitBtn" type="button">Exit focus mode</button>
             </div>
 
@@ -144,7 +228,7 @@
                 <div class="formGrid">
                   <div class="field">
                     <label class="label" for="customHours">Hours</label>
-                    <input id="customHours" class="input" type="number" min="0" max="23" value="0" />
+                    <input id="customHours" class="input" type="number" min="0" max="3" value="0" />
                   </div>
                   <div class="field">
                     <label class="label" for="customMinutes">Minutes</label>
@@ -169,6 +253,8 @@
                   <button class="presetBtn" data-minutes="45" type="button">45 min</button>
                   <button class="presetBtn" data-minutes="60" type="button">60 min</button>
                   <button class="presetBtn" data-minutes="90" type="button">90 min</button>
+                  <button class="presetBtn" data-minutes="120" type="button">120 min</button>
+                  <button class="presetBtn" data-minutes="180" type="button">180 min</button>
                 </div>
 
                 <div class="miniNote">Custom sessions marked as "Study session" are stored and counted.</div>
@@ -180,6 +266,17 @@
                   <input id="soundToggle" type="checkbox" checked />
                   <span class="slider" aria-hidden="true"></span>
                 </label>
+              </div>
+
+              <div class="field fieldFull">
+                <label class="label" for="sessionNameInput">Study session name</label>
+                <input
+                  id="sessionNameInput"
+                  class="input"
+                  type="text"
+                  maxlength="48"
+                  placeholder="Example: Maths, Physics revision, Biology notes"
+                />
               </div>
             </div>
           </div>
@@ -218,6 +315,11 @@
               <div class="statSub" id="averageSessionSub">Build consistency</div>
             </div>
             <div class="stat">
+              <div class="statLabel">Available water bank</div>
+              <div class="statValue" id="waterBankValue">0m</div>
+              <div class="statSub" id="waterBankSub">Earn fresh study time to dedicate</div>
+            </div>
+            <div class="stat">
               <div class="statLabel">Plants</div>
               <div class="statValue" id="plantsValue">0</div>
               <div class="statSub" id="plantsSub">1 plant needs 30 minutes</div>
@@ -236,55 +338,6 @@
               <div class="statLabel">Cows</div>
               <div class="statValue" id="cowValue">0</div>
               <div class="statSub" id="cowSub">1 cow needs 35 minutes</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="card" aria-labelledby="goalsTitle">
-          <div class="cardHeader">
-            <h2 class="cardTitle" id="goalsTitle">Goals and Insights</h2>
-            <div class="cardHint">A weekly goal keeps the dashboard actionable.</div>
-          </div>
-
-          <div class="goalBox">
-            <div class="goalTop">
-              <div>
-                <div class="goalLabel">Weekly goal</div>
-                <div class="goalValue"><span id="weeklyGoalValue">15</span> hours</div>
-              </div>
-              <label class="goalInputWrap">
-                <span class="label" for="weeklyGoalInput">Edit goal</span>
-                <input id="weeklyGoalInput" class="input goalInput" type="number" min="1" max="80" value="15" />
-              </label>
-            </div>
-            <div class="progressTrack progressTrackTall" aria-hidden="true">
-              <div class="progressFill" id="weeklyGoalFill" style="width: 0%"></div>
-            </div>
-            <div class="goalMeta" id="weeklyGoalMeta">0h of 15h this week</div>
-          </div>
-
-          <div class="insightsList">
-            <div class="insightCard">
-              <div class="insightLabel">Best day</div>
-              <div class="insightValue" id="bestDayValue">-</div>
-              <div class="insightSub" id="bestDaySub">No study days yet</div>
-            </div>
-            <div class="insightCard">
-              <div class="insightLabel">Most used mode</div>
-              <div class="insightValue" id="topModeValue">-</div>
-              <div class="insightSub" id="topModeSub">Use the timer to learn your rhythm</div>
-            </div>
-            <div class="insightCard insightCardWide">
-              <div class="insightLabel">Coach note</div>
-              <div class="insightCopy" id="focusTipText">
-                Start with one solid session today. Momentum matters more than perfect duration.
-              </div>
-            </div>
-            <div class="insightCard insightCardWide">
-              <div class="insightLabel">Last dedication</div>
-              <div class="insightCopy" id="lastDedicationText">
-                Finish an eligible study session to dedicate water to a plant, bird, elephant, or cow.
-              </div>
             </div>
           </div>
         </section>
@@ -315,6 +368,38 @@
             <div class="cardHint">Unlock badges by reaching milestones.</div>
           </div>
           <div class="badgesGrid" id="badgesGrid"></div>
+        </section>
+
+        <section class="card span2 activityCard" aria-labelledby="activityTitle">
+          <div class="cardHeader">
+            <h2 class="cardTitle" id="activityTitle">Study Activity</h2>
+            <div class="cardHint" id="activitySummary">Daily study consistency across the last 12 months.</div>
+          </div>
+
+          <div class="activityHeatmapWrap" aria-label="Study activity heatmap">
+            <div class="activityWeekdays" aria-hidden="true">
+              <span>Mon</span>
+              <span>Wed</span>
+              <span>Fri</span>
+            </div>
+            <div class="activityHeatmapScroll">
+              <div class="activityMonths" id="activityMonths" aria-hidden="true"></div>
+              <div class="activityHeatmap" id="activityHeatmap"></div>
+            </div>
+          </div>
+
+          <div class="activityFooter">
+            <div class="activityHint" id="activityHint">Save study sessions to fill your activity map.</div>
+            <div class="activityLegend" aria-label="Activity intensity scale">
+              <span>Less</span>
+              <span class="activityLegendCell level0" aria-hidden="true"></span>
+              <span class="activityLegendCell level1" aria-hidden="true"></span>
+              <span class="activityLegendCell level2" aria-hidden="true"></span>
+              <span class="activityLegendCell level3" aria-hidden="true"></span>
+              <span class="activityLegendCell level4" aria-hidden="true"></span>
+              <span>More</span>
+            </div>
+          </div>
         </section>
 
         <section class="card span2" aria-labelledby="sessionsTitle">
